@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import Search from './components/Search.jsx'
 import Spinner from './components/Spinner.jsx';
 import MovieCard from './components/MovieCard.jsx';
+import { useDebounce } from 'react-use';
+import { updateSearchCount, getTreandingMovies } from './appwrite.js'
 
 const API_BASE_URL = 'https://api.themoviedb.org/3'
 
@@ -19,15 +21,22 @@ const API_OPTIONS = {
 const App = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [movieList, setMovieList] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
-  const fetchMovies = async () => {
+  const [movieList, setMovieList] = useState([]);
+  const [trendingMovies, setTrendingMovies] = useState([]);
+
+  useDebounce(() => setDebouncedSearchTerm(searchTerm), 500, [searchTerm]);
+
+  const fetchMovies = async (querry = '') => {
     setIsLoading(true);
     setErrorMessage('');
 
     try {
-      const endpoint = `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
+      const endpoint = querry
+      ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(querry)}`
+      : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
 
       const response = await fetch(endpoint, API_OPTIONS);
 
@@ -45,6 +54,10 @@ const App = () => {
 
       setMovieList(data.results || []);
 
+      if (querry && data.results.length > 0) {
+        await updateSearchCount(querry, data.results[0]);
+      }
+
     } catch (error) {
       console.error(`Error fetching movies: ${error}`);
       setErrorMessage('Error fetching movies. Please try again later.');
@@ -53,8 +66,22 @@ const App = () => {
     }
   }
 
+  const loadTrendingMovies = async () => {
+    try {
+      const movies = await getTreandingMovies();
+      setTrendingMovies(movies);
+    } catch (error) {
+      console.error(`Error loading trending movies: ${error}`);
+    }
+  }
+
   useEffect(() => {
-    fetchMovies();
+    fetchMovies(debouncedSearchTerm);
+  }
+  , [debouncedSearchTerm]);
+
+  useEffect(() => {
+    loadTrendingMovies();
   }
   , []);
 
@@ -71,6 +98,20 @@ const App = () => {
           <h1>Find <span className='text-gradient'>Movies</span> You’ll Love Without the Hassle</h1>
           <Search searchTerm={searchTerm} setSearchTerm={setSearchTerm}/>
         </header>
+
+        {trendingMovies.length > 0 && (
+          <section className='trending'>
+            <h2>Trending Movies</h2>
+            <ul>
+              {trendingMovies.map((movie, index) => (
+                <li key={movie.$id}>
+                  <p>{index + 1}</p>
+                  <img src={movie.poster_url ? movie.poster_url : './no-movie-vert.png'} alt={movie.title}/>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section className='all-movies'>
           <h2 className='mt-[40px]'>All Movies</h2>
